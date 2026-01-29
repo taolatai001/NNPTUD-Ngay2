@@ -3,96 +3,136 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ngày 2 - Quản lý sản phẩm (db.json GitHub)</title>
+  <title>Bài 2 - Posts & Comments</title>
 
-  <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
   <style>
-    .thumb { width: 56px; height: 40px; object-fit: cover; border-radius: 8px; border: 1px solid #e9ecef; }
+    .strike { text-decoration: line-through; color:#6c757d; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .sticky-actions { position: sticky; top: 0; z-index: 5; background: #fff; }
-    .truncate { max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   </style>
 </head>
 
 <body class="bg-light">
-  <nav class="navbar navbar-expand-lg bg-white border-bottom">
+  <nav class="navbar bg-white border-bottom">
     <div class="container">
-      <span class="navbar-brand fw-semibold">NNPTUD - Ngày 2</span>
-      <span class="text-muted small">Load db.json từ GitHub & hiển thị bảng quản lý</span>
+      <span class="navbar-brand fw-semibold">NNPTUD - Bài 2</span>
+      <span class="text-muted small">Soft delete post • ID string auto • CRUD comments</span>
     </div>
   </nav>
 
   <main class="container py-4">
-    <div class="card shadow-sm">
+
+    <!-- POSTS -->
+    <div class="card shadow-sm mb-4">
       <div class="card-body">
-
-        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
           <div>
-            <h5 class="mb-0">Bảng quản lý sản phẩm</h5>
-            <div class="text-muted small" id="status">Chưa tải dữ liệu</div>
+            <h5 class="mb-1">Quản lý Posts</h5>
+            <div class="text-muted small" id="postStatus">...</div>
           </div>
-
           <div class="d-flex gap-2">
-            <button id="btnLoad" class="btn btn-primary">Tải dữ liệu</button>
+            <button id="btnReloadPosts" class="btn btn-outline-primary btn-sm">Reload</button>
           </div>
         </div>
 
-        <!-- Thanh tìm kiếm + lọc + giới hạn hiển thị -->
-        <div class="row g-2 mb-3 sticky-actions pt-2">
-          <div class="col-12 col-md-4">
-            <!-- Gõ là lọc ngay -->
-            <input id="q" class="form-control" placeholder="Tìm theo tên sản phẩm..."
-                   oninput="handleSearchInput()" />
-            <div class="form-text">Tìm theo <b>title</b> (gõ là lọc ngay - oninput).</div>
-          </div>
+        <hr>
 
-          <div class="col-12 col-md-3">
-            <select id="cat" class="form-select">
-              <option value="">Tất cả category</option>
-            </select>
-            <div class="form-text">Lọc theo category.</div>
-          </div>
-
+        <!-- Form Post -->
+        <div class="row g-2 mb-3">
           <div class="col-12 col-md-2">
-            <select id="pageSize" class="form-select">
-              <option value="5">Hiển thị 5</option>
-              <option value="10" selected>Hiển thị 10</option>
-              <option value="15">Hiển thị 15</option>
-              <option value="20">Hiển thị 20</option>
-            </select>
-            <div class="form-text">Số sản phẩm hiển thị.</div>
+            <label class="form-label mb-1">ID (tạo mới để trống)</label>
+            <input id="postId" class="form-control mono" placeholder="(auto)" readonly>
           </div>
-
-          <!-- Nút sắp xếp -->
-          <div class="col-12 col-md-3">
-            <div class="d-flex flex-wrap gap-2">
-              <button id="sortNameAsc"  class="btn btn-outline-dark btn-sm">Tên ↑</button>
-              <button id="sortNameDesc" class="btn btn-outline-dark btn-sm">Tên ↓</button>
-              <button id="sortPriceAsc" class="btn btn-outline-success btn-sm">Giá ↑</button>
-              <button id="sortPriceDesc" class="btn btn-outline-success btn-sm">Giá ↓</button>
-            </div>
-            <div class="form-text">Sắp xếp theo tên/giá tăng giảm.</div>
+          <div class="col-12 col-md-4">
+            <label class="form-label mb-1">Title</label>
+            <input id="postTitle" class="form-control" placeholder="Nhập title...">
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label mb-1">Body</label>
+            <input id="postBody" class="form-control" placeholder="Nhập body...">
+          </div>
+          <div class="col-12 d-flex gap-2">
+            <button id="btnSavePost" class="btn btn-success">Lưu Post</button>
+            <button id="btnCancelPost" class="btn btn-outline-secondary">Huỷ</button>
           </div>
         </div>
 
-        <!-- Bảng -->
+        <!-- Search (gõ là lọc) -->
+        <div class="row g-2 mb-3 sticky-actions pt-2">
+          <div class="col-12 col-md-6">
+            <input id="postSearch" class="form-control" placeholder="Tìm theo title (gõ là lọc ngay)..." />
+            <div class="form-text">Gõ là lọc ngay (oninput).</div>
+          </div>
+        </div>
+
+        <!-- Table Posts -->
         <div class="table-responsive">
           <table class="table table-striped table-hover align-middle">
             <thead class="table-dark">
               <tr>
-                <th style="width:80px">ID</th>
+                <th style="width:90px">ID</th>
                 <th>Title</th>
-                <th style="width:120px">Giá</th>
-                <th style="width:170px">Category</th>
-                <th style="width:90px">Ảnh</th>
-                <th style="width:170px">Updated</th>
+                <th>Body</th>
+                <th style="width:140px">Trạng thái</th>
+                <th style="width:260px">Hành động</th>
               </tr>
             </thead>
-            <tbody id="tbody">
+            <tbody id="postTbody">
+              <tr><td colspan="5" class="text-muted">Đang tải...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- COMMENTS -->
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+          <div>
+            <h5 class="mb-1">CRUD Comments</h5>
+            <div class="text-muted small" id="commentStatus">...</div>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <label class="text-muted small mb-0">Chọn Post:</label>
+            <select id="postSelect" class="form-select form-select-sm" style="min-width:260px"></select>
+            <button id="btnReloadComments" class="btn btn-outline-primary btn-sm">Reload</button>
+          </div>
+        </div>
+
+        <hr>
+
+        <!-- Form Comment -->
+        <div class="row g-2 mb-3">
+          <div class="col-12 col-md-2">
+            <label class="form-label mb-1">ID (tạo mới để trống)</label>
+            <input id="commentId" class="form-control mono" placeholder="(auto)" readonly>
+          </div>
+          <div class="col-12 col-md-10">
+            <label class="form-label mb-1">Content</label>
+            <input id="commentContent" class="form-control" placeholder="Nhập comment...">
+          </div>
+          <div class="col-12 d-flex gap-2">
+            <button id="btnSaveComment" class="btn btn-success">Lưu Comment</button>
+            <button id="btnCancelComment" class="btn btn-outline-secondary">Huỷ</button>
+          </div>
+        </div>
+
+        <!-- Table Comments -->
+        <div class="table-responsive">
+          <table class="table table-striped table-hover align-middle">
+            <thead class="table-dark">
               <tr>
-                <td colspan="6" class="text-muted">Chưa có dữ liệu.</td>
+                <th style="width:90px">ID</th>
+                <th>Content</th>
+                <th style="width:220px">Hành động</th>
               </tr>
+            </thead>
+            <tbody id="commentTbody">
+              <tr><td colspan="3" class="text-muted">Chưa có dữ liệu...</td></tr>
             </tbody>
           </table>
         </div>
@@ -101,7 +141,7 @@
     </div>
 
     <p class="text-muted small mt-3 mb-0">
-      Gợi ý: chạy bằng Live Server để tránh lỗi fetch khi mở file trực tiếp.
+      Chạy server: <span class="mono">npm run server</span> (port 3000) rồi mở <span class="mono">index.html</span> bằng Live Server.
     </p>
   </main>
 

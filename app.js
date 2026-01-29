@@ -1,17 +1,12 @@
-const DB_URL =
-  (location.hostname === "127.0.0.1" || location.hostname === "localhost")
-    ? "./db.json"
-    : "https://raw.githubusercontent.com/taolatai001/NNPTUD-Ngay2/main/db.json";
-
-// Nếu bị lỗi CORS/không fetch được thì dùng:
-// const DB_URL = "https://cdn.jsdelivr.net/gh/taolatai001/NNPTUD-Ngay2@main/db.json";
-
-const FALLBACK_IMG = "https://placehold.co/600x400";
+const API_BASE = "http://localhost:3000";
 const $ = (id) => document.getElementById(id);
 
-let ALL = [];
-let sortMode = "none"; // name_asc | name_desc | price_asc | price_desc | none
+let POSTS = [];
+let COMMENTS = [];
+let editingPostId = "";      // "" => create
+let editingCommentId = "";   // "" => create
 
+// ===== helpers =====
 function escapeHtml(s) {
   return (s ?? "").toString()
     .replaceAll("&", "&amp;")
@@ -21,137 +16,293 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-function money(x) {
-  return new Intl.NumberFormat("vi-VN").format(Number(x || 0));
+function getMaxIdAsNumber(items) {
+  const nums = (items || [])
+    .map(x => parseInt(x?.id, 10))
+    .filter(n => Number.isFinite(n));
+  return nums.length ? Math.max(...nums) : 0;
 }
 
-function uniq(arr) {
-  return [...new Set(arr)];
+async function api(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.status === 204 ? null : res.json();
 }
 
-function formatDate(iso) {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString("vi-VN");
-  } catch {
-    return "";
-  }
+// ===== POSTS (soft delete) =====
+async function loadPosts() {
+  POSTS = await api("/posts");
+  POSTS = POSTS.map(p => ({ ...p, isDeleted: !!p.isDeleted }));
+  renderPosts();
+  buildPostSelect();
 }
 
-function buildCategories(items) {
-  const cats = uniq(items.map(p => p?.category?.name).filter(Boolean));
-  const sel = $("cat");
-  sel.innerHTML =
-    `<option value="">Tất cả category</option>` +
-    cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+function clearPostForm() {
+  editingPostId = "";
+  $("postId").value = "";
+  $("postTitle").value = "";
+  $("postBody").value = "";
 }
 
-function getFilteredSorted() {
-  const q = $("q").value.trim().toLowerCase();
-  const cat = $("cat").value;
+async function createPost() {
+  const title = $("postTitle").value.trim();
+  const body = $("postBody").value.trim();
+  if (!title) return alert("Nhập title trước!");
 
-  let items = [...ALL];
+  // ID tự tăng = maxId + 1, lưu dạng CHUỖI
+  const nextId = (getMaxIdAsNumber(POSTS) + 1).toString();
 
-  if (q) items = items.filter(p => (p?.title || "").toLowerCase().includes(q));
-  if (cat) items = items.filter(p => (p?.category?.name || "") === cat);
+  await api("/posts", {
+    method: "POST",
+    body: JSON.stringify({ id: nextId, title, body, isDeleted: false })
+  });
 
-  if (sortMode === "name_asc") {
-    items.sort((a, b) => (a?.title || "").localeCompare(b?.title || "", "vi", { sensitivity: "base" }));
-  } else if (sortMode === "name_desc") {
-    items.sort((a, b) => (b?.title || "").localeCompare(a?.title || "", "vi", { sensitivity: "base" }));
-  } else if (sortMode === "price_asc") {
-    items.sort((a, b) => Number(a?.price || 0) - Number(b?.price || 0));
-  } else if (sortMode === "price_desc") {
-    items.sort((a, b) => Number(b?.price || 0) - Number(a?.price || 0));
-  }
-
-  return items;
+  await loadPosts();
+  clearPostForm();
 }
 
-function renderTable(items) {
-  const tbody = $("tbody");
+async function updatePost(id) {
+  const title = $("postTitle").value.trim();
+  const body = $("postBody").value.trim();
+  if (!title) return alert("Nhập title trước!");
 
+  await api(`/posts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title, body })
+  });
+
+  await loadPosts();
+  clearPostForm();
+}
+
+async function softDeletePost(id) {
+  // xoá mềm: isDeleted:true
+  await api(`/posts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isDeleted: true })
+  });
+  await loadPosts();
+}
+
+async function restorePost(id) {
+  await api(`/posts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isDeleted: false })
+  });
+  await loadPosts();
+}
+
+function renderPosts() {
+  const q = $("postSearch").value.trim().toLowerCase();
+  const items = q
+    ? POSTS.filter(p => (p.title || "").toLowerCase().includes(q))
+    : POSTS;
+
+  $("postStatus").textContent = `Hiển thị ${items.length}/${POSTS.length} posts (bao gồm xoá mềm)`;
+
+  const tbody = $("postTbody");
   if (!items.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="text-muted">Không có dữ liệu phù hợp.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="text-muted">Không có dữ liệu.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = items.map(p => {
-    const id = p?.id ?? "";
-    const title = escapeHtml(p?.title ?? "");
-    const price = money(p?.price ?? 0);
-    const category = escapeHtml(p?.category?.name ?? "");
-    const img = (p?.images && p.images[0]) ? p.images[0] : FALLBACK_IMG;
-    const updated = formatDate(p?.updatedAt);
+    const deleted = !!p.isDeleted;
+    const cls = deleted ? "strike" : "";
+    const badge = deleted
+      ? `<span class="badge text-bg-secondary">Đã xoá mềm</span>`
+      : `<span class="badge text-bg-success">Đang hoạt động</span>`;
 
     return `
       <tr>
-        <td class="fw-semibold">${id}</td>
-        <td class="truncate" title="${title}">${title}</td>
-        <td>${price}</td>
-        <td>${category}</td>
-        <td>
-          <img class="thumb" src="${img}" alt="${title}"
-               onerror="this.onerror=null; this.src='${FALLBACK_IMG}';">
+        <td class="mono fw-semibold">${escapeHtml(p.id)}</td>
+        <td class="${cls}">${escapeHtml(p.title)}</td>
+        <td class="${cls}">${escapeHtml(p.body || "")}</td>
+        <td>${badge}</td>
+        <td class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-dark" data-edit="${escapeHtml(p.id)}">Sửa</button>
+          ${
+            deleted
+              ? `<button class="btn btn-sm btn-outline-primary" data-restore="${escapeHtml(p.id)}">Khôi phục</button>`
+              : `<button class="btn btn-sm btn-outline-danger" data-del="${escapeHtml(p.id)}">Xoá mềm</button>`
+          }
+          <button class="btn btn-sm btn-outline-success" data-pick="${escapeHtml(p.id)}">Chọn comments</button>
         </td>
-        <td class="text-muted small">${escapeHtml(updated)}</td>
       </tr>
     `;
   }).join("");
+
+  tbody.querySelectorAll("[data-edit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-edit");
+      const p = POSTS.find(x => x.id === id);
+      if (!p) return;
+
+      editingPostId = id;
+      $("postId").value = p.id; // khi tạo mới để trống, khi sửa mới hiện
+      $("postTitle").value = p.title || "";
+      $("postBody").value = p.body || "";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  tbody.querySelectorAll("[data-del]").forEach(btn => {
+    btn.addEventListener("click", () => softDeletePost(btn.getAttribute("data-del")));
+  });
+
+  tbody.querySelectorAll("[data-restore]").forEach(btn => {
+    btn.addEventListener("click", () => restorePost(btn.getAttribute("data-restore")));
+  });
+
+  tbody.querySelectorAll("[data-pick]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-pick");
+      $("postSelect").value = id;
+      clearCommentForm();
+      await loadCommentsForSelectedPost();
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    });
+  });
 }
 
-function applyAll() {
-  const pageSize = Number($("pageSize")?.value || 10);
+// ===== COMMENTS CRUD =====
+function buildPostSelect() {
+  const sel = $("postSelect");
+  sel.innerHTML = POSTS.map(p => {
+    const label = p.isDeleted ? `⛔ (xoá mềm) ${p.title}` : p.title;
+    return `<option value="${escapeHtml(p.id)}">${escapeHtml(label)}</option>`;
+  }).join("");
 
-  const filtered = getFilteredSorted();
-  const shown = filtered.slice(0, pageSize);
-
-  $("status").textContent =
-    `Đang hiển thị ${shown.length}/${filtered.length} (tổng ${ALL.length}) • Sort: ${sortMode}`;
-
-  renderTable(shown);
+  if (!sel.value && POSTS.length) sel.value = POSTS[0].id;
 }
+
+async function loadCommentsForSelectedPost() {
+  const postId = $("postSelect").value;
+  if (!postId) {
+    $("commentStatus").textContent = "Chưa có post để xem comments";
+    $("commentTbody").innerHTML = `<tr><td colspan="3" class="text-muted">Không có.</td></tr>`;
+    return;
+  }
+
+  COMMENTS = await api(`/comments?postId=${encodeURIComponent(postId)}`);
+  renderComments();
+}
+
+function clearCommentForm() {
+  editingCommentId = "";
+  $("commentId").value = "";
+  $("commentContent").value = "";
+}
+
+async function createComment() {
+  const postId = $("postSelect").value;
+  const content = $("commentContent").value.trim();
+  if (!postId) return alert("Chọn post trước!");
+  if (!content) return alert("Nhập nội dung comment!");
+
+  // ID tự tăng cho comments (chuỗi)
+  const allComments = await api("/comments");
+  const nextId = (getMaxIdAsNumber(allComments) + 1).toString();
+
+  await api("/comments", {
+    method: "POST",
+    body: JSON.stringify({ id: nextId, postId: postId.toString(), content })
+  });
+
+  await loadCommentsForSelectedPost();
+  clearCommentForm();
+}
+
+async function updateComment(id) {
+  const content = $("commentContent").value.trim();
+  if (!content) return alert("Nhập nội dung comment!");
+
+  await api(`/comments/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ content })
+  });
+
+  await loadCommentsForSelectedPost();
+  clearCommentForm();
+}
+
+async function deleteComment(id) {
+  await api(`/comments/${id}`, { method: "DELETE" });
+  await loadCommentsForSelectedPost();
+}
+
+function renderComments() {
+  const tbody = $("commentTbody");
+  $("commentStatus").textContent =
+    `PostID=${$("postSelect").value} • ${COMMENTS.length} comment(s)`;
+
+  if (!COMMENTS.length) {
+    tbody.innerHTML = `<tr><td colspan="3" class="text-muted">Chưa có comment.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = COMMENTS.map(c => `
+    <tr>
+      <td class="mono fw-semibold">${escapeHtml(c.id)}</td>
+      <td>${escapeHtml(c.content || "")}</td>
+      <td class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-outline-dark" data-cedit="${escapeHtml(c.id)}">Sửa</button>
+        <button class="btn btn-sm btn-outline-danger" data-cdel="${escapeHtml(c.id)}">Xoá</button>
+      </td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll("[data-cedit]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-cedit");
+      const c = COMMENTS.find(x => x.id === id);
+      if (!c) return;
+
+      editingCommentId = id;
+      $("commentId").value = c.id;
+      $("commentContent").value = c.content || "";
+    });
+  });
+
+  tbody.querySelectorAll("[data-cdel]").forEach(btn => {
+    btn.addEventListener("click", () => deleteComment(btn.getAttribute("data-cdel")));
+  });
+}
+
+// ===== events =====
+$("btnReloadPosts").addEventListener("click", loadPosts);
+
+$("btnSavePost").addEventListener("click", () => {
+  if (editingPostId) updatePost(editingPostId);
+  else createPost();
+});
+$("btnCancelPost").addEventListener("click", clearPostForm);
 
 // gõ là lọc ngay
-window.handleSearchInput = function () {
-  applyAll();
-};
+$("postSearch").addEventListener("input", renderPosts);
 
-// Events
-$("btnLoad").addEventListener("click", () => {
-  loadData().catch(err => {
-    $("status").textContent = "Lỗi: " + err.message;
-    $("tbody").innerHTML =
-      `<tr><td colspan="6" class="text-danger">Lỗi tải dữ liệu: ${escapeHtml(err.message)}</td></tr>`;
-  });
+$("postSelect").addEventListener("change", () => {
+  clearCommentForm();
+  loadCommentsForSelectedPost();
 });
+$("btnReloadComments").addEventListener("click", loadCommentsForSelectedPost);
 
-$("cat").addEventListener("change", applyAll);
-$("pageSize").addEventListener("change", applyAll);
-
-$("sortNameAsc").addEventListener("click", () => { sortMode = "name_asc"; applyAll(); });
-$("sortNameDesc").addEventListener("click", () => { sortMode = "name_desc"; applyAll(); });
-$("sortPriceAsc").addEventListener("click", () => { sortMode = "price_asc"; applyAll(); });
-$("sortPriceDesc").addEventListener("click", () => { sortMode = "price_desc"; applyAll(); });
-
-async function loadData() {
-  $("status").textContent = "Đang tải dữ liệu...";
-  $("tbody").innerHTML = `<tr><td colspan="6" class="text-muted">Đang tải...</td></tr>`;
-
-  const res = await fetch(DB_URL, { cache: "no-store" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-  const json = await res.json();
-  ALL = Array.isArray(json) ? json : [];
-
-  buildCategories(ALL);
-  sortMode = "none";
-  applyAll();
-}
-
-// Auto load khi mở trang
-loadData().catch(err => {
-  $("status").textContent = "Lỗi: " + err.message;
+$("btnSaveComment").addEventListener("click", () => {
+  if (editingCommentId) updateComment(editingCommentId);
+  else createComment();
 });
+$("btnCancelComment").addEventListener("click", clearCommentForm);
+
+// ===== init =====
+(async function init() {
+  try {
+    await loadPosts();
+    await loadCommentsForSelectedPost();
+  } catch (e) {
+    $("postStatus").textContent = "Lỗi: " + e.message;
+    $("commentStatus").textContent = "Lỗi: " + e.message;
+  }
+})();
