@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ngày 2 - Load db.json từ GitHub</title>
+  <style>
+    body{font-family:system-ui,Arial;margin:20px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    input,select,button{padding:8px 10px;border:1px solid #ddd;border-radius:8px}
+    button{cursor:pointer}
+    .muted{color:#666}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:12px}
+    .card img{width:100%;height:160px;object-fit:cover;border-radius:10px;border:1px solid #eee}
+    .price{font-weight:700}
+  </style>
+</head>
+<body>
+  <h2>Load dữ liệu từ <span class="muted">db.json (GitHub)</span></h2>
+
+  <div class="row">
+    <button id="btnLoad">Tải dữ liệu</button>
+    <input id="q" placeholder="Tìm theo tên sản phẩm..." />
+    <select id="cat">
+      <option value="">Tất cả category</option>
+    </select>
+    <span id="status" class="muted"></span>
+  </div>
+
+  <div id="app" class="grid"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
